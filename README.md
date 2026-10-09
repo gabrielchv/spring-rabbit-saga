@@ -114,8 +114,15 @@ BILLING_ACCOUNT=XXXXXX-XXXXXX-XXXXXX ./scripts/deploy.sh spring-rabbit-saga-XXXX
 ```
 
 `deploy.sh` uses only the **gcloud CLI**: it enables APIs, provisions RabbitMQ + Postgres
-as containers on two `e2-micro` VMs, builds each image with Cloud Build, and deploys to
-Cloud Run in `southamerica-east1`. Tear down with `./scripts/teardown.sh <PROJECT_ID>`.
+as containers on a single `e2-micro` VM (Debian + a startup script), builds each image
+with Cloud Build, and deploys to Cloud Run in `southamerica-east1`. Tear down with
+`./scripts/teardown.sh <PROJECT_ID>`.
+
+> **Why `--no-cpu-throttling --min-instances 1`?** Cloud Run allocates CPU only while a
+> request is in flight and scales idle services to zero. The saga participants are
+> background RabbitMQ consumers with no steady HTTP traffic, so without those two flags
+> the listeners starve and messages sit unacked forever. Each service is a stateless
+> worker, so a single always-on instance is enough for the demo.
 
 ### Security posture (demo only)
 

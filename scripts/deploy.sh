@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Deploy the whole saga to GCP:
-#   3 Cloud Run services (order, payment, inventory) + RabbitMQ/Postgres on e2-micro VMs.
+#   3 Cloud Run services (order, payment, inventory) + RabbitMQ/Postgres on one e2-micro VM.
 #
 # Usage:
 #   ./scripts/deploy.sh <PROJECT_ID> [--create]
@@ -43,17 +43,12 @@ gcloud config set project "$PROJECT_ID"
 echo "== Enabling APIs =="
 gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com compute.googleapis.com --project "$PROJECT_ID"
 
-echo "== Provisioning broker VMs =="
-gcloud compute instances create-with-container rabbitmq \
+echo "== Provisioning broker VM (RabbitMQ + Postgres via startup script) =="
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+gcloud compute instances create broker \
   --project "$PROJECT_ID" --zone "$ZONE" --machine-type e2-micro \
-  --container-image rabbitmq:3-management \
-  --container-env "RABBITMQ_DEFAULT_USER=$RABBIT_USER,RABBITMQ_DEFAULT_PASS=$RABBIT_PASS" \
-  --tags broker
-
-gcloud compute instances create-with-container postgres \
-  --project "$PROJECT_ID" --zone "$ZONE" --machine-type e2-micro \
-  --container-image postgres:16 \
-  --container-env "POSTGRES_DB=$PG_DB,POSTGRES_USER=$PG_USER,POSTGRES_PASSWORD=$PG_PASS" \
+  --image-project debian-cloud --image-family debian-12 \
+  --metadata-from-file startup-script="$SCRIPT_DIR/broker-startup.sh" \
   --tags broker
 
 echo "== Opening broker firewall (demo posture: world-readable, see README) =="
@@ -61,31 +56,30 @@ gcloud compute firewall-rules create allow-broker \
   --project "$PROJECT_ID" --allow tcp:5432,tcp:5672,tcp:15672 \
   --target-tags broker --source-ranges 0.0.0.0/0
 
-RABBIT_IP=$(gcloud compute instances describe rabbitmq --project "$PROJECT_ID" --zone "$ZONE" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
-PG_IP=$(gcloud compute instances describe postgres --project "$PROJECT_ID" --zone "$ZONE" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
-echo "rabbitmq IP: $RABBIT_IP"
-echo "postgres  IP: $PG_IP"
+BROKER_IP=$(gcloud compute instances describe broker --project "$PROJECT_ID" --zone "$ZONE" --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+echo "broker IP: $BROKER_IP"
+echo "(containers finish starting ~2-3 min after the VM boots)"
 
-COMMON_ENV="SPRING_RABBITMQ_HOST=$RABBIT_IP,SPRING_RABBITMQ_PORT=5672,SPRING_RABBITMQ_USERNAME=$RABBIT_USER,SPRING_RABBITMQ_PASSWORD=$RABBIT_PASS"
+COMMON_ENV="SPRING_RABBITMQ_HOST=$BROKER_IP,SPRING_RABBITMQ_PORT=5672,SPRING_RABBITMQ_USERNAME=$RABBIT_USER,SPRING_RABBITMQ_PASSWORD=$RABBIT_PASS"
 
 echo "== Building + deploying order-service =="
 gcloud builds submit order-service --tag "gcr.io/$PROJECT_ID/order-service" --project "$PROJECT_ID"
 gcloud run deploy order-service \
   --image "gcr.io/$PROJECT_ID/order-service" --region "$REGION" --project "$PROJECT_ID" \
-  --platform managed --allow-unauthenticated \
-  --set-env-vars "$COMMON_ENV,SPRING_DATASOURCE_URL=jdbc:postgresql://$PG_IP:5432/$PG_DB,SPRING_DATASOURCE_USERNAME=$PG_USER,SPRING_DATASOURCE_PASSWORD=$PG_PASS"
+  --platform managed --allow-unauthenticated --no-cpu-throttling --min-instances 1 \
+  --set-env-vars "$COMMON_ENV,SPRING_DATASOURCE_URL=jdbc:postgresql://$BROKER_IP:5432/$PG_DB,SPRING_DATASOURCE_USERNAME=$PG_USER,SPRING_DATASOURCE_PASSWORD=$PG_PASS"
 
 echo "== Building + deploying payment-service =="
 gcloud builds submit payment-service --tag "gcr.io/$PROJECT_ID/payment-service" --project "$PROJECT_ID"
 gcloud run deploy payment-service \
   --image "gcr.io/$PROJECT_ID/payment-service" --region "$REGION" --project "$PROJECT_ID" \
-  --platform managed --allow-unauthenticated --set-env-vars "$COMMON_ENV"
+  --platform managed --allow-unauthenticated --no-cpu-throttling --min-instances 1 --set-env-vars "$COMMON_ENV"
 
 echo "== Building + deploying inventory-service =="
 gcloud builds submit inventory-service --tag "gcr.io/$PROJECT_ID/inventory-service" --project "$PROJECT_ID"
 gcloud run deploy inventory-service \
   --image "gcr.io/$PROJECT_ID/inventory-service" --region "$REGION" --project "$PROJECT_ID" \
-  --platform managed --allow-unauthenticated --set-env-vars "$COMMON_ENV"
+  --platform managed --allow-unauthenticated --no-cpu-throttling --min-instances 1 --set-env-vars "$COMMON_ENV"
 
 ORDER_URL=$(gcloud run services describe order-service --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')
 

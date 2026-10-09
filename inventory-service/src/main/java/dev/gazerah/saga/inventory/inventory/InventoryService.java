@@ -5,6 +5,7 @@ import dev.gazerah.saga.events.InventoryReservedEvent;
 import dev.gazerah.saga.events.PaymentProcessedEvent;
 import dev.gazerah.saga.inventory.config.RabbitConfig;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -18,6 +19,7 @@ public class InventoryService {
     private final RabbitTemplate rabbit;
     private final AtomicInteger availableStock;
 
+    @Autowired
     public InventoryService(RabbitTemplate rabbit) {
         this(rabbit, DEFAULT_STOCK);
     }

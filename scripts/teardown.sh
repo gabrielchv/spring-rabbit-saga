@@ -20,7 +20,7 @@ for svc in order-service payment-service inventory-service; do
   gcloud run services delete "$svc" --region "$REGION" --project "$PROJECT_ID" --quiet || true
 done
 
-gcloud compute instances delete rabbitmq postgres --zone "$ZONE" --project "$PROJECT_ID" --quiet || true
+gcloud compute instances delete broker --zone "$ZONE" --project "$PROJECT_ID" --quiet || true
 gcloud compute firewall-rules delete allow-broker --project "$PROJECT_ID" --quiet || true
 
 for svc in order-service payment-service inventory-service; do
@@ -28,5 +28,5 @@ for svc in order-service payment-service inventory-service; do
 done
 
 echo ""
-echo "Broker VMs, firewall and Cloud Run services removed."
+echo "Broker VM, firewall and Cloud Run services removed."
 echo "To delete the project entirely: gcloud projects delete $PROJECT_ID"
