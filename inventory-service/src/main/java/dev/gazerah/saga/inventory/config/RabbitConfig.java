@@ -90,10 +90,15 @@ public class RabbitConfig {
                 .build();
     }
 
+    /**
+     * The dead-letter routing key is the bare queue name: that is what the DLQ
+     * bindings bind with, and the DLX is a topic exchange with no wildcards, so
+     * {@code name + ".dlq"} matched nothing and the message was dropped.
+     */
     private static Queue queueWithDlq(String name) {
         return QueueBuilder.durable(name)
                 .withArgument("x-dead-letter-exchange", DLX)
-                .withArgument("x-dead-letter-routing-key", name + ".dlq")
+                .withArgument("x-dead-letter-routing-key", name)
                 .build();
     }
 }

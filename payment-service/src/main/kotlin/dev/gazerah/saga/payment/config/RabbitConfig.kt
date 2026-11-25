@@ -74,10 +74,13 @@ class RabbitConfig {
             .recoverer(RejectAndDontRequeueRecoverer())
             .build()
 
+    // The dead-letter routing key is the bare queue name: that is what the DLQ
+    // bindings bind with, and the DLX is a topic exchange with no wildcards, so
+    // "$name.dlq" matched nothing and the message was dropped.
     private fun queueWithDlq(name: String): Queue =
         QueueBuilder.durable(name)
             .withArgument("x-dead-letter-exchange", DLX)
-            .withArgument("x-dead-letter-routing-key", "$name.dlq")
+            .withArgument("x-dead-letter-routing-key", name)
             .build()
 
     companion object {

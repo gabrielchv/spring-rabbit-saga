@@ -136,10 +136,19 @@ public class RabbitConfig {
                 .build();
     }
 
+    /**
+     * A durable queue whose rejects route to the dead-letter exchange.
+     *
+     * The dead-letter routing key is the bare queue name because that is what the
+     * DLQ bindings bind with — the DLX is a topic exchange and those binding keys
+     * contain no wildcards, so a key of {@code name + ".dlq"} matched no binding
+     * and the broker dropped the message. The retry/DLQ safety net was therefore
+     * "three attempts, then discard".
+     */
     private static Queue queueWithDlq(String name) {
         return QueueBuilder.durable(name)
                 .withArgument("x-dead-letter-exchange", DLX)
-                .withArgument("x-dead-letter-routing-key", name + ".dlq")
+                .withArgument("x-dead-letter-routing-key", name)
                 .build();
     }
 }
